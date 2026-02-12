@@ -117,14 +117,31 @@ async def process_list(query, context, user_chat_id, new_user, new_serial, edit_
         updated = False
         
         for i, line in enumerate(lines):
-            if (edit_type == "edituser" and new_serial.lower() in line.lower()) or \
-               (edit_type == "editserial" and new_user.lower() in line.lower()) or \
-               (edit_type is None and ("[" in line and "]" in line and "|" not in line)):
+            # 1. حالة تعديل يوزر (نبحث بالسيريال ونغير اليوزر فقط)
+            if edit_type == "edituser" and new_serial.lower() in line.lower():
                 prefix = re.match(r"(\d+-\s*\[)", line)
                 if prefix:
                     lines[i] = f"{prefix.group(1)} {new_user} | {new_serial} ]"
                     updated = True
                     break
+            
+            # 2. حالة تعديل سيريال (نبحث باليوزر ونغير السيريال فقط)
+            elif edit_type == "editserial" and new_user.lower() in line.lower():
+                prefix = re.match(r"(\d+-\s*\[)", line)
+                if prefix:
+                    lines[i] = f"{prefix.group(1)} {new_user} | {new_serial} ]"
+                    updated = True
+                    break
+
+            # 3. حالة الإضافة الجديدة (نبحث عن خانة فارغة تماماً لضمان عدم المسح)
+            elif edit_type is None:
+                 # التحقق من أن الخانة تحتوي على أقواس ولا تحتوي على الفاصل العمودي | (يعني فارغة)
+                 if "[" in line and "]" in line and "|" not in line:
+                    prefix = re.match(r"(\d+-\s*\[)", line)
+                    if prefix:
+                        lines[i] = f"{prefix.group(1)} {new_user} | {new_serial} ]"
+                        updated = True
+                        break
         
         if updated:
             await context.bot.edit_message_text(chat_id=CHANNEL_USERNAME, message_id=LIST_MESSAGE_ID, text="\n".join(lines))
