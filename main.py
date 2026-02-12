@@ -1,6 +1,7 @@
 import logging
 import re
 import asyncio
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler, CallbackQueryHandler
 
@@ -9,7 +10,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 TOKEN = '8545045230:AAFxaE3jbwWVuiAbMLf-7Pd31nrjXd_4-zk'
 CHANNEL_USERNAME = '@Serianumber99' 
-LIST_MESSAGE_ID = 213 # الرسالة التي تحتوي على القائمة الرئيسية
+LIST_MESSAGE_ID = 208 # الرسالة التي تحتوي على القائمة الرئيسية
 GROUP_ID = -1002588398038 # الكروب الذي ستتم فيه الموافقة والرفض
 
 # قائمة المشرفين المسموح لهم بالتحكم الكامل
@@ -34,29 +35,51 @@ async def handle_registration(update: Update, context: ContextTypes.DEFAULT_TYPE
     new_user = match_input.group(1)
     new_serial = match_input.group(2)
 
-    status_msg = await update.message.reply_text("🔍 جاري فحص الأرشيف...")
+    # إرسال رسالة انتظار للمستخدم
+    status_msg = await update.message.reply_text("⏳ يتم التأكد، يرجى الانتظار...")
 
     found_info = "✅ بيانات جديدة."
     is_update = False
-    
-    # فحص الأرشيف
-    for msg_id in range(1, LIST_MESSAGE_ID + 1):
+    can_request = True
+    days_left = 0
+
+    # فحص الأرشيف (من 1 إلى 213) بشكل صامت (التحويل يتم لجروب الإدارة للفحص)
+    for msg_id in range(1, 214):
         try:
-            old_msg = await context.bot.forward_message(chat_id=update.effective_chat.id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
+            # التحويل لجروب الإدارة ليبقى الفحص صامتاً عن المستخدم
+            old_msg = await context.bot.forward_message(chat_id=GROUP_ID, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
             content = (old_msg.text or old_msg.caption or "").lower()
-            if new_serial.lower() in content or new_user.lower() in content:
-                found_info = f"⚠️ بيانات موجودة مسبقاً في الرسالة {msg_id}"
+            
+            # البحث عن اليوزر للتأكد من تاريخ آخر تعديل تسلسلي
+            if new_user.lower() in content:
                 is_update = True
-                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=old_msg.message_id)
-                break
-            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=old_msg.message_id)
-            await asyncio.sleep(0.02)
+                found_info = f"⚠️ بيانات موجودة مسبقاً في الرسالة {msg_id}"
+                
+                # حساب الفرق الزمني (قاعدة الـ 15 يوم)
+                msg_date = old_msg.date.replace(tzinfo=None)
+                current_date = datetime.utcnow()
+                diff = current_date - msg_date
+                
+                if diff.days < 15:
+                    can_request = False
+                    days_left = 15 - diff.days
+                
+                await context.bot.delete_message(chat_id=GROUP_ID, message_id=old_msg.message_id)
+                break # وجدنا آخر ظهور، نتوقف هنا
+                
+            await context.bot.delete_message(chat_id=GROUP_ID, message_id=old_msg.message_id)
+            await asyncio.sleep(0.01) # سرعة عالية للفحص
         except: continue
 
     await status_msg.delete()
-    
-    # إخبار المستخدم بأن طلبه أرسل للإدارة بعد الفحص
-    await update.message.reply_text("✅ تم فحص الأرشيف بنجاح، وتم إرسال طلبك للإدارة للموافقة.")
+
+    # التحقق من قاعدة الـ 15 يوم
+    if not can_request:
+        await update.message.reply_text(f"❌ عذراً، لا يمكنك تعديل الرقم التسلسلي إلا مرة كل 15 يوم.\n⏳ متبقي لك: {days_left} يوم.")
+        return
+
+    # إذا كان مسموحاً (جديد أو مر عليه 15 يوم)
+    await update.message.reply_text("✅ تم التأكد، طلبك قيد المراجعة من قبل الإدارة.")
 
     keyboard = [[
         InlineKeyboardButton("✅ قبول التنفيذ", callback_data=f"exec_{update.message.chat_id}"),
@@ -108,7 +131,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=GROUP_ID, text=f"✅ تم التعديل والمسح لليوزر: {new_user} بواسطة @{query.from_user.username}")
 
     elif action == "reject":
-        # طلب سبب الرفض من المشرف
         await context.bot.send_message(
             chat_id=GROUP_ID, 
             text=f"❌ يرجى الرد على هذه الرسالة بذكر **سبب الرفض** لليوزر {new_user}:\n(الآيدي المرتبط: `{user_chat_id}`)",
@@ -116,18 +138,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def handle_reply_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # التأكد أن الرد في الجروب ومن مشرف
     if update.message.chat_id != GROUP_ID or not update.message.reply_to_message: return
     if update.message.from_user.username not in ADMIN_USERNAMES: return
 
     reply_text = update.message.reply_to_message.text
     if "سبب الرفض" in reply_text:
-        # استخراج الآيدي من الرسالة الأصلية
         try:
             target_user_id = re.search(r"🆔 ID: `(\d+)`|المرتبط: `(\d+)`", reply_text + (update.message.reply_to_message.caption or ""))
             user_id = target_user_id.group(1) or target_user_id.group(2)
             reason = update.message.text
-            
             await context.bot.send_message(chat_id=int(user_id), text=f"❌ نعتذر، تم رفض طلبك.\n**سبب الرفض:** {reason}")
             await update.message.reply_text("✅ تم إرسال سبب الرفض للاعب بنجاح.")
         except:
@@ -143,12 +162,10 @@ async def process_list(query, context, user_chat_id, new_user, new_serial, edit_
         updated = False
         
         for i, line in enumerate(lines):
-            # استخراج رقم السطر (م)
             prefix_match = re.match(r"^(\d+)\s*-\s*\[", line)
             if not prefix_match: continue
             line_number = prefix_match.group(1)
 
-            # 1. حالة التعديل (يوزر أو سيريال)
             if edit_type == "edituser" and new_serial.lower() in line.lower():
                 lines[i] = f"{line_number}- [ {new_user} | {new_serial} ]"
                 updated = True
@@ -157,10 +174,7 @@ async def process_list(query, context, user_chat_id, new_user, new_serial, edit_
                 lines[i] = f"{line_number}- [ {new_user} | {new_serial} ]"
                 updated = True
                 break
-
-            # 2. حالة الإضافة الجديدة (البحث عن أول خانة فارغة [   ])
             elif edit_type is None:
-                # استخدام regex للبحث عن أقواس فارغة تماماً حتى لو فيها مسافات كتيرة
                 if re.search(r"\[\s+\]", line) or "[]" in line.replace(" ", ""):
                     lines[i] = f"{line_number}- [ {new_user} | {new_serial} ]"
                     updated = True
@@ -171,10 +185,7 @@ async def process_list(query, context, user_chat_id, new_user, new_serial, edit_
             await context.bot.edit_message_text(chat_id=CHANNEL_USERNAME, message_id=LIST_MESSAGE_ID, text=new_text)
             await context.bot.send_message(chat_id=user_chat_id, text="✅ مبروك! تم قبول طلبك وتسجيل بياناتك في القائمة.")
             return True
-        else:
-            await context.bot.send_message(chat_id=GROUP_ID, text="❌ فشل: لم يتم العثور على خانة فارغة في القائمة!")
-            return False
-
+        return False
     except Exception as e:
         await context.bot.send_message(chat_id=GROUP_ID, text=f"❌ خطأ تقني: {e}")
         return False
@@ -184,9 +195,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.PHOTO, handle_registration))
     application.add_handler(CallbackQueryHandler(button_callback))
-    # هاندلر للرد على سبب الرفض
     application.add_handler(MessageHandler(filters.TEXT & filters.REPLY, handle_reply_reason))
-    
     application.run_polling()
 
 if __name__ == '__main__':
