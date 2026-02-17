@@ -10,7 +10,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 TOKEN = '8545045230:AAFxaE3jbwWVuiAbMLf-7Pd31nrjXd_4-zk'
 CHANNEL_USERNAME = '@Serianumber99' 
-LIST_MESSAGE_ID = 213 # الرسالة التي تحتوي على القائمة الرئيسية
+LIST_MESSAGE_ID = 208 # الرسالة التي تحتوي على القائمة الرئيسية
 GROUP_ID = -1002588398038 # الكروب الذي ستتم فيه الموافقة والرفض
 
 # قائمة المشرفين المسموح لهم بالتحكم الكامل
