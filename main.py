@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 # إعداد السجلات
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-TOKEN = '8545045230:AAFxaE3jbwWVuiAbMLf-7Pd31nrjXd_4-zk'
+TOKEN = '8520440293:AAH5tEodZxDeQL63-ry9mUxWWjmWUj1TRC0'
 CHANNEL_USERNAME = '@Serianumber99' 
 LIST_MESSAGE_ID = 208 # الرسالة التي تحتوي على القائمة الرئيسية
 GROUP_ID = -1002588398038 # الكروب الذي ستتم فيه الموافقة والرفض
